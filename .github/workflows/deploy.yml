@@ -27,9 +27,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
-      - name: Instalace
+      - name: Instalace závislostí
         run: npm install
 
       - name: Sestavení aplikace
@@ -52,6 +51,6 @@ jobs:
     needs: build
 
     steps:
-      - name: Zveřejnění
+      - name: Zveřejnění aplikace
         id: deployment
         uses: actions/deploy-pages@v4
