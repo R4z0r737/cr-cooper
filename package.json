@@ -1,7 +1,7 @@
 {
   "name": "cr-cooper",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,10 +10,10 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "exceljs": "^4.4.0",
     "react": "latest",
     "react-dom": "latest",
-    "vite": "latest"
+    "vite": "latest",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {}
 }
