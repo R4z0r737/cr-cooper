@@ -1,4 +1,4 @@
-import React,{useEffect,useMemo,useRef,useState}from'react';import ExcelJS from'exceljs';
+import React,{useEffect,useMemo,useRef,useState}from'react';import * as XLSX from'xlsx';
 const KEY='acr-cooper-final-v1',uid=()=>Date.now()+'-'+Math.random().toString(36).slice(2),today=()=>new Date().toISOString().slice(0,10),fresh=()=>({id:uid(),name:'Cooperův test',date:today(),trackLength:400,runners:[],elapsedMs:0,status:'setup',createdAt:Date.now(),autoStop12:true});
 const norm=v=>(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(),surname=v=>norm(v.trim().split(/\s+/).pop()||''),fmt=ms=>{let h=Math.floor(ms/10),s=Math.floor(h/100);return`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}.${String(h%100).padStart(2,'0')}`},date=v=>new Intl.DateTimeFormat('cs-CZ').format(new Date(v+'T12:00:00'));
 function Btn({children,cls='',...p}){return <button className={'btn '+cls}{...p}>{children}</button>}function Card({children,cls=''}){return <div className={'card '+cls}>{children}</div>}function Header({title,sub,back}){return <header><div className="header">{back&&<Btn cls="back" onClick={back}>‹</Btn>}<div><h1>{title}</h1><small>{sub}</small></div></div></header>}function Foot({children}){return <footer><div className="footer">{children}</div></footer>}function Page({children}){return <div className="app"><main>{children}</main></div>}function Year({year,setYear}){return <select className="field" value={year} onChange={e=>setYear(+e.target.value)}>{Array.from({length:15},(_,i)=>2026+i).map(y=><option key={y}>{y}</option>)}</select>}
@@ -9,7 +9,106 @@ function Runners({test,save,back,next}){const[num,setNum]=useState(''),[name,set
 const letters=[['Q','W','E','R','T','Z','U','I','O','P'],['A','S','D','F','G','H','J','K','L'],['Y','X','C','V','B','N','M']];
 function Measure({test,save,back,done}){const[running,setRunning]=useState(false),[elapsed,setElapsed]=useState(test.elapsedMs||0),[show,setShow]=useState(true),[mode,setMode]=useState('number'),[entry,setEntry]=useState(''),[notice,setNotice]=useState(null),[auto,setAuto]=useState(test.autoStop12??true);const startAt=useRef(0),base=useRef(elapsed),latest=useRef(elapsed),warn=useRef(false),finished=useRef(false),noticeTimer=useRef(null);useEffect(()=>{latest.current=elapsed},[elapsed]);useEffect(()=>()=>clearTimeout(noticeTimer.current),[]);useEffect(()=>{if(!running)return;const timer=setInterval(()=>setElapsed(base.current+performance.now()-startAt.current),30);return()=>clearInterval(timer)},[running]);const flash=(text,detail,bad=false,duration=1000)=>{clearTimeout(noticeTimer.current);setNotice({text,detail,bad});noticeTimer.current=setTimeout(()=>setNotice(null),duration)};useEffect(()=>{if(!running||!auto)return;if(elapsed>=660000&&!warn.current){warn.current=true;flash('⏱ 11:00','Zbývá 1 minuta',false,3000);navigator.vibrate?.([150,80,150])}if(elapsed>=720000&&!finished.current){finished.current=true;save({...test,elapsedMs:720000,status:'finished'});setRunning(false);done()}},[elapsed,running,auto]);const start=()=>{base.current=elapsed;startAt.current=performance.now();setRunning(true)},stop=()=>{const value=running?base.current+performance.now()-startAt.current:elapsed;setRunning(false);setElapsed(value);latest.current=value;save({...test,elapsedMs:Math.floor(value),status:'paused'})},lap=(rid,d=1)=>{const runner=test.runners.find(x=>x.id===rid);if(!runner)return;const laps=Math.max(0,runner.laps+d);save({...test,elapsedMs:Math.floor(latest.current),runners:test.runners.map(x=>x.id===rid?{...x,laps}:x)});flash(`${runner.number} · ${runner.name}`,`${laps}. kolo`);navigator.vibrate?.(50)},matches=entry?test.runners.filter(r=>norm(r.name).includes(norm(entry))).slice(0,5):[],submit=()=>{const runner=mode==='number'?test.runners.find(x=>x.number===entry):(matches.length===1?matches[0]:null);if(!runner){flash('Běžec nebyl nalezen','Kolo nebylo přičteno',true,1200);return}lap(runner.id);setEntry('')};return <Page><Header title="Měření" sub={test.name} back={()=>{stop();back()}}/><Card><div className="autoline"><button className={'switch '+(auto?'on':'')} onClick={()=>{const next=!auto;setAuto(next);save({...test,autoStop12:next})}}><span>⏱ 12</span><i><u/></i></button></div><div className="clock">{fmt(elapsed)}</div><div className="grid3"><Btn cls="green" onClick={start}>START</Btn><Btn cls="red" onClick={stop}>STOP</Btn><Btn onClick={()=>{setRunning(false);setElapsed(0);latest.current=0;base.current=0;warn.current=false;finished.current=false;save({...test,elapsedMs:0})}}>RESET</Btn></div></Card><Btn cls="full" onClick={()=>setShow(!show)}>{show?'Skrýt klávesnici':'Zobrazit klávesnici'}</Btn>{show&&<Card><div className="grid2"><Btn cls={mode==='number'?'green':''} onClick={()=>{setMode('number');setEntry('')}}>ČÍSLO</Btn><Btn cls={mode==='name'?'green':''} onClick={()=>{setMode('name');setEntry('')}}>JMÉNO</Btn></div><div className="displayWrap"><div className="display">{entry||(mode==='number'?'Číslo běžce':'Jméno')}</div>{notice&&<div className={'fieldToast '+(notice.bad?'bad':'')}><b>{notice.text}</b><small>{notice.detail}</small></div>}</div>{mode==='number'?<div className="keys">{[1,2,3,4,5,6,7,8,9,'C',0,'⌫'].map(k=><Btn key={k} onClick={()=>setEntry(v=>k==='C'?'':k==='⌫'?v.slice(0,-1):v+k)}>{k}</Btn>)}</div>:<>{letters.map((row,i)=><div className="letters" key={i}>{row.map(k=><Btn key={k} onClick={()=>setEntry(v=>v+k)}>{k}</Btn>)}</div>)}{matches.map(r=><button className="match" key={r.id} onClick={()=>setEntry(r.name)}>{r.number} · {r.name}</button>)}</>}<Btn cls="green full" onClick={submit}>PŘIČÍST KOLO</Btn></Card>}{test.runners.map(r=><Card cls="row" key={r.id}><button className="badge" onClick={()=>lap(r.id)}>{r.number}</button><div className="grow"><b>{r.name}</b><div className="total">{r.laps} kol · {r.laps*test.trackLength} m</div></div><Btn onClick={()=>lap(r.id,-1)}>−</Btn><Btn cls="green" onClick={()=>lap(r.id)}>＋</Btn></Card>)}<Foot><Btn cls="green full" onClick={()=>{const value=running?base.current+performance.now()-startAt.current:latest.current;setRunning(false);save({...test,elapsedMs:Math.floor(value),status:'finished'});done()}}>UKONČIT A VYHODNOTIT</Btn></Foot></Page>}
 function Track({length,current,onPreview,onApply,onClose}){const[m,setM]=useState(current||0),ref=useRef(null),cx=180,cy=125,half=74,r=52,straight=148,per=2*straight+2*Math.PI*r;const change=v=>{let n=Math.min(length-1,Math.max(0,+v||0));setM(n);onPreview(n)},point=f=>{let d=((f%1)+1)%1*per;if(d<Math.PI*r){let a=Math.PI/2-d/r;return{x:cx+half+r*Math.cos(a),y:cy+r*Math.sin(a)}}d-=Math.PI*r;if(d<straight)return{x:cx+half-d,y:cy-r};d-=straight;if(d<Math.PI*r){let a=-Math.PI/2-d/r;return{x:cx-half+r*Math.cos(a),y:cy+r*Math.sin(a)}}d-=Math.PI*r;return{x:cx-half+d,y:cy+r}},pick=e=>{e.preventDefault();let b=ref.current.getBoundingClientRect(),x=(e.clientX-b.left)*360/b.width,y=(e.clientY-b.top)*270/b.height,best={m:0,d:Infinity};for(let i=0;i<length;i++){let p=point(i/length),d=(p.x-x)**2+(p.y-y)**2;if(d<best.d)best={m:i,d}}change(best.m)},p=point(m/length),lane=d=>`M ${cx+half} ${cy+r+d} A ${r+d} ${r+d} 0 0 0 ${cx+half} ${cy-r-d} H ${cx-half} A ${r+d} ${r+d} 0 0 0 ${cx-half} ${cy+r+d} H ${cx+half}`,marks=Array.from({length:8},(_,i)=>Math.round(i*length/8));return <div className="ovalbox"><div className="split"><b>Místo zastavení</b><button className="danger" onClick={onClose}>✕</button></div><svg ref={ref} onClick={pick} viewBox="0 0 360 270"><rect width="360" height="270" fill="#064e3b"/><path d={lane(25)} fill="none" stroke="#d8662b" strokeWidth="31"/>{[4,11,18,25].map(d=><path key={d} d={lane(d)} fill="none" stroke="white" strokeOpacity=".85" strokeWidth="1.4"/>)}{marks.map(x=>{let q=point(x/length),dx=q.x-cx,dy=q.y-cy,n=Math.max(1,Math.hypot(dx,dy)),lx=q.x+dx/n*29,ly=q.y+dy/n*29;return <g key={x}><rect x={lx-22} y={ly-12} width="44" height="24" rx="8" fill="#0f172a"/><text x={lx} y={ly+4} textAnchor="middle" fill="white" fontSize="11" fontWeight="900">{x} m</text></g>})}<circle cx={p.x} cy={p.y} r="18" fill="#facc15" stroke="#0f172a" strokeWidth="3"/><text x={p.x} y={p.y+4} textAnchor="middle" fill="#0f172a" fontSize="10" fontWeight="900">{m} m</text></svg><div className="row"><Btn onClick={()=>change(m-1)}>−</Btn><div className="meter">{m} m</div><Btn onClick={()=>change(m+1)}>＋</Btn></div><Btn cls="green full" onClick={()=>onApply(m)}>PŘIDAT {m} m BĚŽCI</Btn></div>}
-function Results({test,save,back,home}){const[sort,setSort]=useState('number'),[open,setOpen]=useState(null),[preview,setPreview]=useState({}),[exporting,setExporting]=useState(false),[exportMessage,setExportMessage]=useState('');let list=[...test.runners].sort((a,b)=>sort==='number'?(+a.number)-(+b.number):sort==='surname'?surname(a.name).localeCompare(surname(b.name),'cs'):(a.order??0)-(b.order??0)),extra=(rid,v)=>save({...test,runners:test.runners.map(r=>r.id===rid?{...r,extraMeters:Math.min(test.trackLength-1,Math.max(0,+v||0))}:r)});const splitName=full=>{const parts=full.trim().split(/\s+/).filter(Boolean);return parts.length<2?{first:parts[0]||'',last:''}:{first:parts.slice(0,-1).join(' '),last:parts.at(-1)}};const safeFile=value=>norm(value).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'cooperuv-test';const exportExcel=async()=>{setExporting(true);setExportMessage('');try{const response=await fetch(`${import.meta.env.BASE_URL}tabulka-prezkouseni_app-v2.xlsx?v=2`,{cache:'reload'});if(!response.ok)throw new Error('Šablonu se nepodařilo načíst.');const workbook=new ExcelJS.Workbook();await workbook.xlsx.load(await response.arrayBuffer());const sheet=workbook.getWorksheet('List1');if(!sheet)throw new Error('V šabloně chybí list List1.');test.runners.forEach((runner,index)=>{const row=index+2,{first,last}=splitName(runner.name),total=runner.laps*test.trackLength+(+runner.extraMeters||0);sheet.getCell(`C${row}`).value=first;sheet.getCell(`D${row}`).value=last;sheet.getCell(`I${row}`).value=new Date(`${test.date}T12:00:00`);sheet.getCell(`I${row}`).numFmt='dd.mm.yyyy';sheet.getCell(`N${row}`).value=total});const buffer=await workbook.xlsx.writeBuffer();const blob=new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`${safeFile(test.name)}-${test.date}.xlsx`;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),500);setExportMessage(`Excel vytvořen: ${test.runners.length} běžců`)}catch(error){setExportMessage(`Export se nezdařil: ${error.message}`)}finally{setExporting(false)}};return <Page><Header title="Výsledky" sub={test.name} back={home}/><div className="grid2"><Btn onClick={back}>UPRAVIT TEST</Btn><Btn cls="green" onClick={home}>ZPĚT DO EVIDENCE</Btn></div><Card><select className="field" value={sort} onChange={e=>setSort(e.target.value)}><option value="number">Podle čísla</option><option value="surname">Příjmení A-Z</option><option value="entry">Pořadí zápisu</option></select><Btn cls="excelBtn full" disabled={exporting||!test.runners.length} onClick={exportExcel}>{exporting?'VYTVÁŘÍM EXCEL…':'EXPORTOVAT DO EXCELU'}</Btn>{exportMessage&&<div className="exportMessage">{exportMessage}</div>}</Card>{list.map(r=>{let base=r.laps*test.trackLength,shown=preview[r.id]??(+r.extraMeters||0);return <Card key={r.id}><div className="row"><div className="grow"><b>{r.number} · {r.name}</b><div>{r.laps} kol × {test.trackLength} m = {base} m</div>{open===r.id&&<div className="total">Celkem s vybranými metry: {base+shown} m</div>}</div><strong className="total">{base+(+r.extraMeters||0)} m</strong></div><Btn cls="green full" onClick={()=>{setOpen(open===r.id?null:r.id);setPreview(p=>({...p,[r.id]:+r.extraMeters||0}))}}>OVÁL</Btn>{open===r.id&&<Track length={test.trackLength} current={r.extraMeters} onPreview={m=>setPreview(p=>({...p,[r.id]:m}))} onClose={()=>setOpen(null)} onApply={m=>{extra(r.id,m);setOpen(null)}}/>}</Card>})}<Foot><Btn cls="green full" onClick={home}>ULOŽIT TEST</Btn></Foot></Page>}
+function Results({test,save,back,home}){const[sort,setSort]=useState('number'),[open,setOpen]=useState(null),[preview,setPreview]=useState({}),[exporting,setExporting]=useState(false),[exportMessage,setExportMessage]=useState('');let list=[...test.runners].sort((a,b)=>sort==='number'?(+a.number)-(+b.number):sort==='surname'?surname(a.name).localeCompare(surname(b.name),'cs'):(a.order??0)-(b.order??0)),extra=(rid,v)=>save({...test,runners:test.runners.map(r=>r.id===rid?{...r,extraMeters:Math.min(test.trackLength-1,Math.max(0,+v||0))}:r)});const splitName=full=>{const parts=full.trim().split(/\s+/).filter(Boolean);return parts.length<2?{first:parts[0]||'',last:''}:{first:parts.slice(0,-1).join(' '),last:parts.at(-1)}};const safeFile=value=>norm(value).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'cooperuv-test';const exportExcel=async()=>{
+  setExporting(true);
+  setExportMessage('');
+
+  try{
+    const response=await fetch(
+      `${import.meta.env.BASE_URL}tabulka-prezkouseni_app-v3.xlsx?v=5`,
+      {cache:'no-store'}
+    );
+
+    if(!response.ok){
+      throw new Error('Šablonu se nepodařilo načíst.');
+    }
+
+    const workbook=XLSX.read(
+      await response.arrayBuffer(),
+      {
+        type:'array',
+        cellStyles:true,
+        cellDates:true
+      }
+    );
+
+    const sheet=workbook.Sheets['List1'];
+
+    if(!sheet){
+      throw new Error('V šabloně chybí list List1.');
+    }
+
+    test.runners.forEach((runner,index)=>{
+      const row=index+2;
+      const {first,last}=splitName(runner.name);
+      const total=
+        runner.laps*test.trackLength+
+        (+runner.extraMeters||0);
+
+      sheet[`C${row}`]={
+        t:'s',
+        v:first
+      };
+
+      sheet[`D${row}`]={
+        t:'s',
+        v:last
+      };
+
+      sheet[`I${row}`]={
+        t:'d',
+        v:new Date(`${test.date}T12:00:00`),
+        z:'dd.mm.yyyy'
+      };
+
+      sheet[`N${row}`]={
+        t:'n',
+        v:total
+      };
+    });
+
+    const output=XLSX.write(
+      workbook,
+      {
+        bookType:'xlsx',
+        type:'array',
+        cellStyles:true
+      }
+    );
+
+    const blob=new Blob(
+      [output],
+      {
+        type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      }
+    );
+
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');
+
+    link.href=url;
+    link.download=`${safeFile(test.name)}-${test.date}.xlsx`;
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    setTimeout(()=>{
+      URL.revokeObjectURL(url);
+    },500);
+
+    setExportMessage(
+      `Excel vytvořen: ${test.runners.length} běžců`
+    );
+  }catch(error){
+    setExportMessage(
+      `Export se nezdařil: ${error.message}`
+    );
+  }finally{
+    setExporting(false);
+  }
+}
+;return <Page><Header title="Výsledky" sub={test.name} back={home}/><div className="grid2"><Btn onClick={back}>UPRAVIT TEST</Btn><Btn cls="green" onClick={home}>ZPĚT DO EVIDENCE</Btn></div><Card><select className="field" value={sort} onChange={e=>setSort(e.target.value)}><option value="number">Podle čísla</option><option value="surname">Příjmení A-Z</option><option value="entry">Pořadí zápisu</option></select><Btn cls="excelBtn full" disabled={exporting||!test.runners.length} onClick={exportExcel}>{exporting?'VYTVÁŘÍM EXCEL…':'EXPORTOVAT DO EXCELU'}</Btn>{exportMessage&&<div className="exportMessage">{exportMessage}</div>}</Card>{list.map(r=>{let base=r.laps*test.trackLength,shown=preview[r.id]??(+r.extraMeters||0);return <Card key={r.id}><div className="row"><div className="grow"><b>{r.number} · {r.name}</b><div>{r.laps} kol × {test.trackLength} m = {base} m</div>{open===r.id&&<div className="total">Celkem s vybranými metry: {base+shown} m</div>}</div><strong className="total">{base+(+r.extraMeters||0)} m</strong></div><Btn cls="green full" onClick={()=>{setOpen(open===r.id?null:r.id);setPreview(p=>({...p,[r.id]:+r.extraMeters||0}))}}>OVÁL</Btn>{open===r.id&&<Track length={test.trackLength} current={r.extraMeters} onPreview={m=>setPreview(p=>({...p,[r.id]:m}))} onClose={()=>setOpen(null)} onApply={m=>{extra(r.id,m);setOpen(null)}}/>}</Card>})}<Foot><Btn cls="green full" onClick={home}>ULOŽIT TEST</Btn></Foot></Page>}
 function People({tests,year,setYear,back}){const[q,setQ]=useState(''),[open,setOpen]=useState(null),people=useMemo(()=>{let m={};tests.forEach(t=>t.runners.forEach(r=>{let k=norm(r.name),total=r.laps*t.trackLength+(+r.extraMeters||0);(m[k]??={name:r.name,res:[]}).res.push({date:t.date,test:t.name,total})}));return Object.entries(m).filter(([,p])=>norm(p.name).includes(norm(q)))},[tests,q]);return <Page><Header title="Evidence běžců" sub={'Počet běžců: '+people.length} back={back}/><Year year={year} setYear={setYear}/><input className="field" placeholder="Hledat běžce" value={q} onChange={e=>setQ(e.target.value)}/>{people.map(([k,p])=>{let yr=p.res.filter(x=>x.date.startsWith(year+'-')),best=yr.length?Math.max(...yr.map(x=>x.total)):null;return <Card cls="compact" key={k}><button className="plain" onClick={()=>setOpen(open===k?null:k)}><b>{p.name}</b><small>Nejlepší výsledek v roce {year}</small><strong className="total">{best===null?'Bez výsledku':best+' m'}</strong></button>{open===k&&p.res.sort((a,b)=>b.date.localeCompare(a.date)).map((x,i)=><div className="history" key={i}>{date(x.date)} · {x.test}<b>{x.total} m</b></div>)}</Card>})}</Page>}
 function Norms({year,setYear,back}){let men=[['I. do 30 let',year+'–'+(year-30),3000,2800,2600],['II. 31–35 let',(year-31)+'–'+(year-35),2950,2700,2500],['III. 36–40 let',(year-36)+'–'+(year-40),2850,2600,2400],['IV. 41–45 let',(year-41)+'–'+(year-45),2750,2500,2200],['V. 46–50 let',(year-46)+'–'+(year-50),2650,2300,2000],['VI. 51+',year-51+' a starší',2400,2100,1800]];return <Page><Header title="Normy" sub={'Běh na 12 minut · '+year} back={back}/><Year year={year} setYear={setYear}/><Card><table><thead><tr><th>Kategorie</th><th>Výtečné</th><th>Dobré</th><th>Vyhovující</th></tr></thead><tbody>{men.map(x=><tr key={x[0]}><td>{x[0]}<small>{x[1]}</small></td><td>{x[2]} m</td><td>{x[3]} m</td><td>{x[4]} m</td></tr>)}</tbody></table></Card></Page>}
 function Settings({theme,setTheme,back}){return <Page><Header title="Nastavení" sub="Vzhled aplikace" back={back}/><Card><div className="grid2"><Btn cls={theme==='dark'?'green':''} onClick={()=>setTheme('dark')}>🌙 Tmavý</Btn><Btn cls={theme==='light'?'green':''} onClick={()=>setTheme('light')}>☀️ Světlý</Btn></div></Card></Page>}
